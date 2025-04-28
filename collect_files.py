@@ -10,44 +10,49 @@ def copy_files(input_dir, output_dir, max_depth=None):
     input_path = Path(input_dir).resolve()
     output_path = Path(output_dir).resolve()
     
+    # Создаем выходную директорию, если её нет
     output_path.mkdir(parents=True, exist_ok=True)
     
-    if max_depth == 0:
-        for item in input_path.iterdir():
-            if item.is_file():
-                copy_file_with_rename(item, output_path)
-            elif item.is_dir():
-                dest_dir = output_path / item.name
-                dest_dir.mkdir(exist_ok=True)
-                shutil.copytree(item, dest_dir, dirs_exist_ok=True)
+    if max_depth is None:
+        copy_without_structure(input_path, output_path)
     else:
-        process_directory(input_path, output_path, 1, input_path, max_depth)
+        copy_with_max_depth(input_path, output_path, max_depth)
 
-def process_directory(current_dir, output_dir, current_depth, base_path, max_depth=None):
-    if max_depth is not None and current_depth > max_depth:
-        rel_path = current_dir.relative_to(base_path)
-        target_dir = output_dir / rel_path.parent
-        target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(current_dir, target_dir / current_dir.name, dirs_exist_ok=True)
-        return
+def copy_without_structure(input_dir, output_dir):
+    for root, _, files in os.walk(input_dir):
+        for filename in files:
+            source_file = Path(root) / filename
+            copy_file_with_rename(source_file, output_dir)
+
+def copy_with_max_depth(input_dir, output_dir, max_depth):
+    input_dir = Path(input_dir)
     
-    for item in current_dir.iterdir():
-        if item.is_file():
-            if max_depth is None:
-                copy_file_with_rename(item, output_dir)
+    for root, dirs, files in os.walk(input_dir):
+        root_path = Path(root)
+        
+        rel_path = root_path.relative_to(input_dir)
+        depth = len(rel_path.parts)
+        
+        if depth <= max_depth:
+            if str(rel_path) == '.':
+                target_dir = output_dir
             else:
-                rel_path = item.parent.relative_to(base_path)
                 target_dir = output_dir / rel_path
                 target_dir.mkdir(parents=True, exist_ok=True)
-                copy_file_with_rename(item, target_dir)
-                
-        elif item.is_dir():
-            if max_depth is not None and current_depth < max_depth:
-                new_output = output_dir / item.name
-                new_output.mkdir(exist_ok=True)
-                process_directory(item, new_output, current_depth + 1, base_path, max_depth)
-            else:
-                process_directory(item, output_dir, current_depth + 1, base_path, max_depth)
+            
+            for filename in files:
+                source_file = root_path / filename
+                copy_file_with_rename(source_file, target_dir)
+        else:
+            parts = rel_path.parts
+            preserved_path = Path(*parts[:max_depth])
+            
+            target_dir = output_dir / preserved_path
+            target_dir.mkdir(parents=True, exist_ok=True)
+            
+            for filename in files:
+                source_file = root_path / filename
+                copy_file_with_rename(source_file, target_dir)
 
 def copy_file_with_rename(src_file, dest_dir):
     filename = src_file.name
@@ -65,16 +70,19 @@ def copy_file_with_rename(src_file, dest_dir):
     
     shutil.copy2(src_file, dest_path)
 
+def main():
+    parser = argparse.ArgumentParser(description="Копирует файлы из входной директории в выходную.")
+    parser.add_argument("input_dir", help="Входная директория")
+    parser.add_argument("output_dir", help="Выходная директория")
+    parser.add_argument("--max_depth", type=int, help="Максимальная глубина вложенности для сохранения структуры")
+    
+    args = parser.parse_args()
+    
+    if not os.path.isdir(args.input_dir):
+        print(f"Ошибка: Входная директория не существует: {args.input_dir}")
+        sys.exit(1)
+    
+    copy_files(args.input_dir, args.output_dir, args.max_depth)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("input_dir")
-parser.add_argument("output_dir")
-parser.add_argument("--max_depth", type=int)
-    
-args = parser.parse_args()
-    
-if not os.path.isdir(args.input_dir):
-    print(f"Ошибка: Входная директория не существует: {args.input_dir}")
-    sys.exit(1)
-    
-copy_files(args.input_dir, args.output_dir, args.max_depth)
+if __name__ == "__main__":
+    main()
